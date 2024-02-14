@@ -2,33 +2,35 @@ import os
 import random
 import time
 import uuid
-from typing import Callable
+import warnings
+from typing import Callable, Any
 
-# create a decorator method that will make a single request to given on __init__ server
 import requests
 
-
-class ClientHello:
-    def __init__(self, ip: str, port: int, client_id: str, features: dict[str, bool]):
-        self.ip = ip
-        self.port = port
-        self.client_id = client_id
-        self.features = features
+from models import Behaviour
 
 
 class PyFeature:
-    def __init__(self, server: str):
+    def __init__(self, server: str) -> None:
         self.server = server
-        self.features = {}
-        self.request_offset = 0
-        self.last_request_time = 0
+        self.features: dict[str, tuple[bool, Behaviour]] = {}
+        self.request_offset = 0.0
+        self.last_request_time = 0.0
         unique_sep = "||"
-        self._id = str(uuid.uuid5(
-            uuid.NAMESPACE_X500,
-            os.environ.get("CI", str(random.random())) + unique_sep + os.environ.get("CI2", str(random.random()))))
-        # self.__make_first_request()
+        self._id = str(
+            uuid.uuid5(
+                uuid.NAMESPACE_X500,
+                os.environ.get("CI", str(random.random()))
+                + unique_sep
+                + os.environ.get("CI2", str(random.random())),
+            )
+        )
 
-    def __make_first_request(self):
+    def __make_first_request(self) -> None:
+        """
+        Make first request to server to get request offset and first feature list
+        :return:
+        """
         params = {
             "ip": "localhost",
             "port": 8080,
@@ -40,43 +42,35 @@ class PyFeature:
         self.request_offset = response_model["request_offset"]
         self.last_request_time = time.time()
 
-    def feat(self, feature_name: str | None = None, feature_status: bool = True) -> Callable:
-        def decorator(func):
-            def wrapper(*args, **kwargs):
-                print("I am wrapper")
-                if self.last_request_time == 0:
-                    self.__make_first_request()
-                elif self.last_request_time + self.request_offset < time.time():
-                    self.__check_config_update()
-                return func(*args, **kwargs)
-
-            print("I am decorator")
-            if feature_name not in self.features:
-                self.features.update({feature_name: feature_status})
-            return wrapper
-        return decorator
-
     def __check_config_update(self):
         response = requests.get(self.server + f"/{self._id}/config")
         print(response.json())
 
+    def __empty_func(self, *args: Any, **kwargs: Any) -> None:
+        warnings.warn("Feature is disabled", UserWarning)
 
-# at the moment decorators collecting cool info about all functions and I can set up all features
-# but how to use each decorator before call of function also?
+    def feat(
+            self,
+            feature_name: str | None = None,
+            feature_status: bool = True,
+            behaviour: Behaviour = Behaviour.RETURN_NONE,
+    ) -> Callable:
+        def decorator(func: Callable) -> Callable:
+            def wrapper(*args: Any, **kwargs: Any) -> Callable:
+                if self.last_request_time == 0:
+                    self.__make_first_request()
+                elif self.last_request_time + self.request_offset < time.time():
+                    self.__check_config_update()
+                if not feature_status and behaviour == Behaviour.RETURN_NONE:
+                    return self.__empty_func(*args, **kwargs)  # type: ignore
+                elif not feature_status and behaviour == Behaviour.RAISE_ERROR:
+                    raise ValueError("Feature is disabled")
+                return func(*args, **kwargs)
 
-feature = PyFeature("http://127.0.0.1:8080")
+            if feature_name and feature_name not in self.features:
+                self.features.update({feature_name: (feature_status, behaviour)})
+            elif func.__name__ not in self.features:
+                self.features.update({func.__name__: (feature_status, behaviour)})
+            return wrapper
 
-
-@feature.feat(feature_name="feature_1")
-def get_data():
-    print("1 I am getting data")
-
-
-@feature.feat(feature_name="feature_2")
-def get_data_2():
-    print("2 I am getting data")
-
-
-if __name__ == "__main__":
-    get_data()
-    get_data()
+        return decorator
