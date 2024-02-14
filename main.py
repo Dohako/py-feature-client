@@ -40,11 +40,13 @@ class PyFeature:
         response = requests.post(self.server + "/hello", json=params)
         response_model = response.json()
         self.request_offset = response_model["request_offset"]
+        self.features = response_model["features"]
         self.last_request_time = time.time()
 
     def __check_config_update(self):
         response = requests.get(self.server + f"/{self._id}/config")
-        print(response.json())
+        self.last_request_time = time.time()
+        self.features = response.json()["features"]
 
     def __empty_func(self, *args: Any, **kwargs: Any) -> None:
         warnings.warn("Feature is disabled", UserWarning)
@@ -67,8 +69,6 @@ class PyFeature:
             def wrapper(*args: Any, **kwargs: Any) -> Callable:
                 if self.last_request_time == 0:
                     self.__make_first_request()
-                    self.__check_config_update()
-
                 if self.last_request_time + self.request_offset < time.time():
                     self.__check_config_update()
                 actual_feature_status, actual_behaviour = self.features[
