@@ -50,27 +50,42 @@ class PyFeature:
         warnings.warn("Feature is disabled", UserWarning)
 
     def feat(
-            self,
-            feature_name: str | None = None,
-            feature_status: bool = True,
-            behaviour: Behaviour = Behaviour.RETURN_NONE,
+        self,
+        feature_name: str | None = None,
+        feature_status: bool = True,
+        behaviour: Behaviour = Behaviour.RETURN_NONE,
     ) -> Callable:
         def decorator(func: Callable) -> Callable:
+            if feature_name:
+                actual_feature_name = feature_name
+            else:
+                actual_feature_name = func.__name__
+
+            if actual_feature_name not in self.features:
+                self.features.update({actual_feature_name: (feature_status, behaviour)})
+
             def wrapper(*args: Any, **kwargs: Any) -> Callable:
                 if self.last_request_time == 0:
                     self.__make_first_request()
-                elif self.last_request_time + self.request_offset < time.time():
                     self.__check_config_update()
-                if not feature_status and behaviour == Behaviour.RETURN_NONE:
+
+                if self.last_request_time + self.request_offset < time.time():
+                    self.__check_config_update()
+                actual_feature_status, actual_behaviour = self.features[
+                    actual_feature_name
+                ]
+                if (
+                    not actual_feature_status
+                    and actual_behaviour == Behaviour.RETURN_NONE
+                ):
                     return self.__empty_func(*args, **kwargs)  # type: ignore
-                elif not feature_status and behaviour == Behaviour.RAISE_ERROR:
+                elif (
+                    not actual_feature_status
+                    and actual_behaviour == Behaviour.RAISE_ERROR
+                ):
                     raise ValueError("Feature is disabled")
                 return func(*args, **kwargs)
 
-            if feature_name and feature_name not in self.features:
-                self.features.update({feature_name: (feature_status, behaviour)})
-            elif func.__name__ not in self.features:
-                self.features.update({func.__name__: (feature_status, behaviour)})
             return wrapper
 
         return decorator
