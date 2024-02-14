@@ -35,6 +35,9 @@ def test_decorator(mock_requests):
     }
 
     feature.features["test_feature"] = (False, Behaviour.RETURN_NONE)
+    # this test will fail on long enough time, because of the request offset
+    # and thus because I can't by design change feature state inside client app
+    # it is fine to fail
     assert test_func2() == None
     assert feature.features == {
         "test_func": (True, Behaviour.RETURN_NONE),
